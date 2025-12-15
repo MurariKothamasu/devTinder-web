@@ -1,59 +1,76 @@
-import React, { useEffect, useState } from "react";
-import { useParams } from "react-router";
-import { Socket } from "socket.io-client";
-import { creaeteSocketConnection } from "../utils/socket";
+import { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
+import { createSocketConnection } from "../utils/socket";
 import { useSelector } from "react-redux";
-
-// SVG Icons for display purposes
-const SendIcon = (props) => (
-  <svg
-    viewBox="0 0 24 24"
-    width="24"
-    height="24"
-    fill="currentColor"
-    {...props}
-  >
-    <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
-  </svg>
-);
+import axios from "axios";
+import { BASE_URL } from "../utils/constants";
 
 const Chat = () => {
   const { targetUserId } = useParams();
-
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const user = useSelector((store) => store.user);
   const userId = user?._id;
 
+  const fetchChatMessages = async () => {
+    const chat = await axios.get(BASE_URL + "/chat/" + targetUserId, {
+      withCredentials: true,
+    });
+
+    console.log(chat.data.messages);
+
+    const chatMessages = chat?.data?.messages.map((msg) => {
+      const { senderId, text } = msg;
+      return {
+        firstName: senderId?.firstName,
+        lastName: senderId?.lastName,
+        text,
+      };
+    });
+    setMessages(chatMessages);
+  };
+  useEffect(() => {
+    fetchChatMessages();
+  }, []);
+
+  useEffect(() => {
+    if (!userId) {
+      return;
+    }
+    const socket = createSocketConnection();
+    // As soon as the page loaded, the socket connection is made and joinChat event is emitted
+    socket.emit("joinChat", {
+      firstName: user.firstName,
+      userId,
+      targetUserId,
+    });
+
+    socket.on("messageReceived", ({ firstName, lastName, text }) => {
+      console.log(firstName + " :  " + text);
+      setMessages((messages) => [...messages, { firstName, lastName, text }]);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [userId, targetUserId]);
+
   const sendMessage = () => {
-    console.log(user);
-    const socket = creaeteSocketConnection();
+    const socket = createSocketConnection();
     socket.emit("sendMessage", {
       firstName: user.firstName,
-      lastName : user.lastName,
+      lastName: user.lastName,
       userId,
       targetUserId,
       text: newMessage,
     });
-    setNewMessage("")
+    setNewMessage("");
   };
 
-  useEffect(() => {
-    if (!userId) return;
-    const socket = creaeteSocketConnection();
-    socket.emit("joinChat", { userId, targetUserId });
-
-    socket.on("messageReceived", ({ firstName , lastName ,  text }) => {
-      console.log(firstName + " " + text);
-      setMessages((messages) => [...messages, { firstName ,  lastName, text }]);
-    });
-    return () => {
-      socket.disconnect();
-    };
-  }, [targetUserId, userId]);
+  if (!user) return null;
 
   return (
-   <div className="w-3/4 mx-auto border border-gray-600 m-5 h-[70vh] flex flex-col">
+    <div className="w-3/4 mx-auto border border-gray-600 m-5 h-[70vh] flex flex-col">
       <h1 className="p-5 border-b border-gray-600">Chat</h1>
       <div className="flex-1 overflow-scroll p-5">
         {messages.map((msg, index) => {
@@ -61,13 +78,16 @@ const Chat = () => {
             <div
               key={index}
               className={
+                "chat " +
                 (user.firstName === msg.firstName ? "chat-end" : "chat-start")
               }
             >
               <div className="chat-header">
-                {`${msg.firstName} ${msg.lastName}`}
+                {`${msg.firstName}  ${msg.lastName}`}
+                <time className="text-xs opacity-50"> 2 hours ago</time>
               </div>
               <div className="chat-bubble">{msg.text}</div>
+              <div className="chat-footer opacity-50">Seen</div>
             </div>
           );
         })}
@@ -85,5 +105,4 @@ const Chat = () => {
     </div>
   );
 };
-
 export default Chat;
